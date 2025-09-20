@@ -1,4 +1,3 @@
-# modules/afw/main.tf
 # Create subnet for Azure Firewall
 resource "azurerm_subnet" "firewall" {
   name                 = local.firewall_subnet_name
@@ -90,7 +89,7 @@ resource "azurerm_firewall_application_rule_collection" "aks_required" {
   }
 }
 
-# Network Rule Collection for outbound traffic
+# Network Rule Collection for outbound traffic with dynamic blocks
 resource "azurerm_firewall_network_rule_collection" "outbound" {
   name                = "outbound-network-rules"
   azure_firewall_name = azurerm_firewall.main.name
@@ -98,50 +97,26 @@ resource "azurerm_firewall_network_rule_collection" "outbound" {
   priority            = 200
   action              = "Allow"
 
-  rule {
-    name = "allow-dns"
+  dynamic "rule" {
+    for_each = local.network_rules
 
-    source_addresses = [
-      var.aks_subnet_address_prefix
-    ]
+    content {
+      name = rule.value.name
 
-    destination_ports = [
-      "53"
-    ]
+      source_addresses = [
+        var.aks_subnet_address_prefix
+      ]
 
-    destination_addresses = [
-      "8.8.8.8",
-      "8.8.4.4"
-    ]
+      destination_ports = rule.value.ports
 
-    protocols = [
-      "UDP",
-      "TCP"
-    ]
-  }
+      destination_addresses = rule.value.addresses
 
-  rule {
-    name = "allow-ntp"
-
-    source_addresses = [
-      var.aks_subnet_address_prefix
-    ]
-
-    destination_ports = [
-      "123"
-    ]
-
-    destination_addresses = [
-      "*"
-    ]
-
-    protocols = [
-      "UDP"
-    ]
+      protocols = rule.value.protocols
+    }
   }
 }
 
-# NAT Rule Collection for inbound traffic to NGINX
+# NAT Rule Collection for inbound traffic to NGINX with dynamic blocks
 resource "azurerm_firewall_nat_rule_collection" "nginx" {
   name                = "nginx-inbound"
   azure_firewall_name = azurerm_firewall.main.name
@@ -149,50 +124,25 @@ resource "azurerm_firewall_nat_rule_collection" "nginx" {
   priority            = 300
   action              = "Dnat"
 
-  rule {
-    name = "nginx-http"
+  dynamic "rule" {
+    for_each = local.nat_rules
 
-    source_addresses = [
-      "*"
-    ]
+    content {
+      name = rule.value.name
 
-    destination_ports = [
-      "80"
-    ]
+      source_addresses = ["*"]
 
-    destination_addresses = [
-      azurerm_public_ip.firewall.ip_address
-    ]
+      destination_ports = [tostring(rule.value.port)]
 
-    translated_port    = 80
-    translated_address = var.aks_loadbalancer_ip
+      destination_addresses = [
+        azurerm_public_ip.firewall.ip_address
+      ]
 
-    protocols = [
-      "TCP"
-    ]
-  }
+      translated_port    = rule.value.port
+      translated_address = var.aks_loadbalancer_ip
 
-  rule {
-    name = "nginx-https"
-
-    source_addresses = [
-      "*"
-    ]
-
-    destination_ports = [
-      "443"
-    ]
-
-    destination_addresses = [
-      azurerm_public_ip.firewall.ip_address
-    ]
-
-    translated_port    = 443
-    translated_address = var.aks_loadbalancer_ip
-
-    protocols = [
-      "TCP"
-    ]
+      protocols = rule.value.protocols
+    }
   }
 }
 

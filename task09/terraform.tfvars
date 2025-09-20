@@ -1,4 +1,4 @@
-# terraform.tfvars
+# terraform.tfvars (добавить tags)
 aks_loadbalancer_ip = "172.168.80.61"
 tags = {
   environment = "mod9"

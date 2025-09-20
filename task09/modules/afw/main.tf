@@ -51,7 +51,7 @@ resource "azurerm_route" "firewall" {
   resource_group_name    = var.resource_group_name
   route_table_name       = azurerm_route_table.main.name
   address_prefix         = "0.0.0.0/0"
-  next_hop_type         = "VirtualAppliance"
+  next_hop_type          = "VirtualAppliance"
   next_hop_in_ip_address = azurerm_firewall.main.ip_configuration[0].private_ip_address
 }
 
@@ -71,7 +71,7 @@ resource "azurerm_firewall_application_rule_collection" "aks_required" {
 
   rule {
     name = "allow-aks-required-fqdns"
-    
+
     source_addresses = [
       var.aks_subnet_address_prefix
     ]
@@ -82,7 +82,7 @@ resource "azurerm_firewall_application_rule_collection" "aks_required" {
       port = "80"
       type = "Http"
     }
-    
+
     protocol {
       port = "443"
       type = "Https"
@@ -100,7 +100,7 @@ resource "azurerm_firewall_network_rule_collection" "outbound" {
 
   rule {
     name = "allow-dns"
-    
+
     source_addresses = [
       var.aks_subnet_address_prefix
     ]
@@ -122,7 +122,7 @@ resource "azurerm_firewall_network_rule_collection" "outbound" {
 
   rule {
     name = "allow-ntp"
-    
+
     source_addresses = [
       var.aks_subnet_address_prefix
     ]
@@ -151,7 +151,7 @@ resource "azurerm_firewall_nat_rule_collection" "nginx" {
 
   rule {
     name = "nginx-http"
-    
+
     source_addresses = [
       "*"
     ]
@@ -160,9 +160,11 @@ resource "azurerm_firewall_nat_rule_collection" "nginx" {
       "80"
     ]
 
-    destination_address = azurerm_public_ip.firewall.ip_address
+    destination_addresses = [
+      azurerm_public_ip.firewall.ip_address
+    ]
 
-    translated_port = 80
+    translated_port    = 80
     translated_address = var.aks_loadbalancer_ip
 
     protocols = [
@@ -172,7 +174,7 @@ resource "azurerm_firewall_nat_rule_collection" "nginx" {
 
   rule {
     name = "nginx-https"
-    
+
     source_addresses = [
       "*"
     ]
@@ -181,9 +183,11 @@ resource "azurerm_firewall_nat_rule_collection" "nginx" {
       "443"
     ]
 
-    destination_address = azurerm_public_ip.firewall.ip_address
+    destination_addresses = [
+      azurerm_public_ip.firewall.ip_address
+    ]
 
-    translated_port = 443
+    translated_port    = 443
     translated_address = var.aks_loadbalancer_ip
 
     protocols = [

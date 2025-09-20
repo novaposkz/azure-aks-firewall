@@ -4,7 +4,7 @@ locals {
   route_table_name     = "cmtr-f4p05tns-mod9-rt"
   firewall_name        = "cmtr-f4p05tns-mod9-afw"
   public_ip_name       = "cmtr-f4p05tns-mod9-pip"
-  
+
   # Required FQDN tags for AKS
   aks_required_fqdns = [
     "*.hcp.${var.location}.azmk8s.io",

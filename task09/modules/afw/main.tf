@@ -1,150 +1,146 @@
-# Create subnet for Azure Firewall
-resource "azurerm_subnet" "firewall" {
-  name                 = local.firewall_subnet_name
-  resource_group_name  = var.resource_group_name
+resource "azurerm_subnet" "afw_subnet" {
+  name                 = local.afw_subnet_name
+  resource_group_name  = var.rg_name
   virtual_network_name = var.vnet_name
-  address_prefixes     = [var.firewall_subnet_address_prefix]
+  address_prefixes     = [local.afw_subnet_prefix]
 }
 
-# Create Public IP for Azure Firewall
-resource "azurerm_public_ip" "firewall" {
-  name                = local.public_ip_name
+resource "azurerm_public_ip" "afw_pip" {
+  name                = local.afw_pip_name
+  resource_group_name = var.rg_name
   location            = var.location
-  resource_group_name = var.resource_group_name
   allocation_method   = "Static"
   sku                 = "Standard"
-  tags                = var.tags
 
   lifecycle {
     create_before_destroy = true
   }
 }
 
-# Create Azure Firewall
-resource "azurerm_firewall" "main" {
-  name                = local.firewall_name
+resource "azurerm_firewall" "afw" {
+  name                = local.afw_name
   location            = var.location
-  resource_group_name = var.resource_group_name
+  resource_group_name = var.rg_name
   sku_name            = "AZFW_VNet"
   sku_tier            = "Standard"
-  tags                = var.tags
 
   ip_configuration {
     name                 = "configuration"
-    subnet_id            = azurerm_subnet.firewall.id
-    public_ip_address_id = azurerm_public_ip.firewall.id
+    subnet_id            = azurerm_subnet.afw_subnet.id
+    public_ip_address_id = azurerm_public_ip.afw_pip.id
   }
+
+  depends_on = [azurerm_subnet.afw_subnet, azurerm_public_ip.afw_pip]
 }
 
-# Create Route Table
-resource "azurerm_route_table" "main" {
-  name                = local.route_table_name
+resource "azurerm_route_table" "afw_rt" {
+  name                = local.afw_route_table_name
   location            = var.location
-  resource_group_name = var.resource_group_name
-  tags                = var.tags
+  resource_group_name = var.rg_name
+
+  route {
+    name           = "route-to-firewall"
+    address_prefix = "0.0.0.0/0"
+    next_hop_type  = "Internet" # "VirtualAppliance"
+    # next_hop_in_ip_address = azurerm_firewall.afw.ip_configuration[0].private_ip_address
+  }
+
+  depends_on = [azurerm_firewall.afw]
 }
 
-# Create route to force traffic through Azure Firewall
-resource "azurerm_route" "firewall" {
-  name                   = "local.route_name"
-  resource_group_name    = var.resource_group_name
-  route_table_name       = azurerm_route_table.main.name
-  address_prefix         = "0.0.0.0/0"
-  next_hop_type          = "VirtualAppliance"
-  next_hop_in_ip_address = azurerm_firewall.main.ip_configuration[0].private_ip_address
+data "azurerm_subnet" "aks_snet" {
+  name                 = var.subnet_name
+  virtual_network_name = var.vnet_name
+  resource_group_name  = var.rg_name
 }
 
-# Associate route table with AKS subnet
-resource "azurerm_subnet_route_table_association" "aks" {
-  subnet_id      = "/subscriptions/${data.azurerm_subscription.current.subscription_id}/resourceGroups/${var.resource_group_name}/providers/Microsoft.Network/virtualNetworks/${var.vnet_name}/subnets/${var.aks_subnet_name}"
-  route_table_id = azurerm_route_table.main.id
+
+resource "azurerm_subnet_route_table_association" "associate_rt" {
+  subnet_id      = data.azurerm_subnet.aks_snet.id
+  route_table_id = azurerm_route_table.afw_rt.id
+
+  depends_on = [data.azurerm_subnet.aks_snet, azurerm_route_table.afw_rt]
 }
 
-# Application Rule Collection for AKS required FQDNs
-resource "azurerm_firewall_application_rule_collection" "aks_required" {
-  name                = "local.app_rule_collection_name"
-  azure_firewall_name = azurerm_firewall.main.name
-  resource_group_name = var.resource_group_name
-  priority            = 100
+resource "azurerm_firewall_application_rule_collection" "app_rules" {
+  name                = local.afw_app_rc
+  azure_firewall_name = azurerm_firewall.afw.name
+  resource_group_name = var.rg_name
+  priority            = 102
+  action              = "Allow"
+
+  dynamic "rule" {
+    for_each = local.application_rules
+    content {
+      name             = rule.value.name
+      source_addresses = rule.value.source_addresses
+      target_fqdns     = rule.value.target_fqdns
+
+      dynamic "protocol" {
+        for_each = rule.value.protocols
+        content {
+          port = protocol.value.port
+          type = protocol.value.type
+        }
+      }
+    }
+  }
+
+  depends_on = [azurerm_firewall.afw]
+}
+
+resource "azurerm_firewall_network_rule_collection" "net_rules" {
+  name                = local.afw_network_rc
+  azure_firewall_name = azurerm_firewall.afw.name
+  resource_group_name = var.rg_name
+  priority            = 101
   action              = "Allow"
 
   rule {
-    name = "allow-aks-required-fqdns"
-
-    source_addresses = [
-      var.aks_subnet_address_prefix
-    ]
-
-    target_fqdns = local.aks_required_fqdns
-
-    protocol {
-      port = "80"
-      type = "Http"
-    }
-
-    protocol {
-      port = "443"
-      type = "Https"
-    }
+    name                  = "allow-network"
+    source_addresses      = ["*"]
+    destination_ports     = ["1-65535"]
+    destination_addresses = ["*"]
+    protocols             = ["UDP", "TCP"]
   }
+
+  depends_on = [azurerm_firewall.afw]
 }
 
-# Network Rule Collection for outbound traffic with dynamic blocks
-resource "azurerm_firewall_network_rule_collection" "outbound" {
-  name                = "local.net_rule_collection_name"
-  azure_firewall_name = azurerm_firewall.main.name
-  resource_group_name = var.resource_group_name
-  priority            = 200
-  action              = "Allow"
-
-  dynamic "rule" {
-    for_each = local.network_rules
-
-    content {
-      name = rule.value.name
-
-      source_addresses = [
-        var.aks_subnet_address_prefix
-      ]
-
-      destination_ports = rule.value.ports
-
-      destination_addresses = rule.value.addresses
-
-      protocols = rule.value.protocols
-    }
-  }
-}
-
-# NAT Rule Collection for inbound traffic to NGINX with dynamic blocks
-resource "azurerm_firewall_nat_rule_collection" "nginx" {
-  name                = "local.nat_rule_collection_name"
-  azure_firewall_name = azurerm_firewall.main.name
-  resource_group_name = var.resource_group_name
-  priority            = 300
+resource "azurerm_firewall_nat_rule_collection" "nat_rules" {
+  name                = local.afw_nat_rc
+  resource_group_name = var.rg_name
+  azure_firewall_name = azurerm_firewall.afw.name
+  priority            = 100
   action              = "Dnat"
 
-  dynamic "rule" {
-    for_each = local.nat_rules
+  rule {
+    name                  = "nginx-dnat-http"
+    destination_addresses = [azurerm_public_ip.afw_pip.ip_address]
+    destination_ports     = ["80"]
+    protocols             = ["TCP"]
+    source_addresses      = ["*"]
 
-    content {
-      name = rule.value.name
-
-      source_addresses = ["*"]
-
-      destination_ports = [tostring(rule.value.port)]
-
-      destination_addresses = [
-        azurerm_public_ip.firewall.ip_address
-      ]
-
-      translated_port    = rule.value.port
-      translated_address = var.aks_loadbalancer_ip
-
-      protocols = rule.value.protocols
-    }
+    translated_port    = "80"
+    translated_address = var.aks_loadbalancer_ip
   }
+
+  depends_on = [azurerm_firewall.afw]
 }
 
-# Data source for current subscription
-data "azurerm_subscription" "current" {}
+
+# resource "azurerm_network_security_rule" "allow_firewall_to_aks_lb" {
+#   name                        = local.nsg_rule_name
+#   priority                    = 101
+#   direction                   = "Inbound"
+#   access                      = "Allow"
+#   protocol                    = "*"
+#   source_port_range           = "*"
+#   destination_port_range      = "80"
+#   source_address_prefix       = azurerm_public_ip.afw_pip.ip_address
+#   destination_address_prefix  = var.aks_loadbalancer_ip
+#   resource_group_name         = local.rg_name
+#   network_security_group_name = local.nsg_name
+
+#   depends_on = [azurerm_firewall.afw]
+# }

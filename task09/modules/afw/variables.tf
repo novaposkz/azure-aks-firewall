@@ -45,3 +45,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "project_prefix" {
+  description = "Project prefix for naming"
+  type        = string
+  default     = "f4p05tns"
+}

@@ -46,7 +46,7 @@ resource "azurerm_route_table" "main" {
 
 # Create route to force traffic through Azure Firewall
 resource "azurerm_route" "firewall" {
-  name                   = "ToAzureFirewall"
+  name                   = "local.route_name"
   resource_group_name    = var.resource_group_name
   route_table_name       = azurerm_route_table.main.name
   address_prefix         = "0.0.0.0/0"
@@ -62,7 +62,7 @@ resource "azurerm_subnet_route_table_association" "aks" {
 
 # Application Rule Collection for AKS required FQDNs
 resource "azurerm_firewall_application_rule_collection" "aks_required" {
-  name                = "aks-required-fqdns"
+  name                = "local.app_rule_collection_name"
   azure_firewall_name = azurerm_firewall.main.name
   resource_group_name = var.resource_group_name
   priority            = 100
@@ -91,7 +91,7 @@ resource "azurerm_firewall_application_rule_collection" "aks_required" {
 
 # Network Rule Collection for outbound traffic with dynamic blocks
 resource "azurerm_firewall_network_rule_collection" "outbound" {
-  name                = "outbound-network-rules"
+  name                = "local.net_rule_collection_name"
   azure_firewall_name = azurerm_firewall.main.name
   resource_group_name = var.resource_group_name
   priority            = 200
@@ -118,7 +118,7 @@ resource "azurerm_firewall_network_rule_collection" "outbound" {
 
 # NAT Rule Collection for inbound traffic to NGINX with dynamic blocks
 resource "azurerm_firewall_nat_rule_collection" "nginx" {
-  name                = "nginx-inbound"
+  name                = "local.nat_rule_collection_name"
   azure_firewall_name = azurerm_firewall.main.name
   resource_group_name = var.resource_group_name
   priority            = 300

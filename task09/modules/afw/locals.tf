@@ -30,6 +30,18 @@ locals {
       ports     = ["123"]
       addresses = ["*"]
       protocols = ["UDP"]
+    },
+    {
+      name        = format("%s-http-rule", var.project_prefix)
+      ports       = ["80"]
+      addresses   = ["*"]
+      protocols   = ["TCP"]
+    },
+    {
+      name        = format("%s-https-rule", var.project_prefix) 
+      ports       = ["443"]
+      addresses   = ["*"]
+      protocols   = ["TCP"]
     }
   ]
 
@@ -46,4 +58,25 @@ locals {
       protocols = ["TCP"]
     }
   ]
+  # Используем функции для преобразования региона
+  location_normalized = replace(lower(var.location), " ", "")
+  
+  # FQDN с использованием функций
+  aks_required_fqdns = [
+    "*.hcp.${local.location_normalized}.azmk8s.io",
+    "mcr.microsoft.com",
+    "*.data.mcr.microsoft.com", 
+    "management.azure.com",
+    "login.microsoftonline.com",
+    "packages.microsoft.com",
+    "acs-mirror.azureedge.net",
+    "*.azurecr.io",
+    "*.blob.core.windows.net"
+  ]
+
+  # Имена с использованием format()
+  app_rule_collection_name  = format("cmtr-%s-mod9-app-rc", var.project_prefix)
+  net_rule_collection_name  = format("cmtr-%s-mod9-net-rc", var.project_prefix)
+  nat_rule_collection_name  = format("cmtr-%s-mod9-nat-rc", var.project_prefix)
+  route_name                = format("cmtr-%s-mod9-route", var.project_prefix)
 }
